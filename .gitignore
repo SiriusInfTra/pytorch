@@ -238,6 +238,7 @@ build_android
 build_ios
 .build_debug/*
 .build_release/*
+.build_relwithdebinfo/*
 .build_profile/*
 distribute/*
 *.testbin

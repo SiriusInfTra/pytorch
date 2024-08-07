@@ -521,6 +521,7 @@ struct DefaultCUDAAllocator final : public at::Allocator {
     }
     switch (g_cuda_memory_pool_type) {
       case CudaMemoryPoolType::NONE:
+        LOG(INFO) << "Caffe2 DefaultCUDAAllocator CudaMemoryPoolType::NONE " << nbytes;
         if (nbytes != 0) {
           CUDA_ENFORCE(cudaMalloc(&ptr, nbytes));
         }
@@ -561,6 +562,7 @@ struct DefaultCUDAAllocator final : public at::Allocator {
           // some models that are currently running with the thc
           // allocator fit in memory.  We will need to find some
           // way of resolving this problem.
+          LOG(INFO) << "Caffe2 DefaultCUDAAllocator CudaMemoryPoolType::THC " << nbytes;
           c10::cuda::CUDAStreamGuard g(
             Stream(
               Stream::DEFAULT,

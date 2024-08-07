@@ -33,6 +33,7 @@
 #include <set>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 TORCH_SDT_DEFINE_SEMAPHORE(malloc)
 TORCH_SDT_DEFINE_SEMAPHORE(free)
@@ -764,20 +765,39 @@ struct MempoolIdHash {
 };
 
 cudaError_t cudaMallocMaybeCapturing(void** p, size_t size) {
+  static bool unified_memory = false;
+  static bool initialized = false;
+  if (!initialized) {
+    const char* env = getenv("TORCH_UNIFIED_MEMORY");
+    if (env && atoi(env) != 0) {
+      unified_memory = true;
+      std::cout << __FILE__ << ":" << __LINE__ << ": " 
+                << "pytorch using unified memory" << std::endl;
+    }
+    initialized = true;
+  }
 #if !defined(USE_ROCM) || ROCM_VERSION >= 50300
   if (at::cuda::currentStreamCaptureStatusMayInitCtx() ==
       at::cuda::CaptureStatus::None) {
-#endif
-    return C10_CUDA_ERROR_HANDLED(cudaMalloc(p, size));
-#if !defined(USE_ROCM) || ROCM_VERSION >= 50300
+    if (!unified_memory) {
+      return C10_CUDA_ERROR_HANDLED(cudaMalloc(p, size));
+    } else {
+      return C10_CUDA_ERROR_HANDLED(cudaMallocManaged(p, size));
+    }
   } else {
     // It's ok to capture cudaMallocs, as long as we never cudaFree those
     // addresses before replay.
     // Capturing cudaMalloc behaves nicely: it gives the graph new VA,
     // but is ignored (won't leakily allocate new memory) in replays.
     at::cuda::CUDAStreamCaptureModeGuard g{cudaStreamCaptureModeRelaxed};
-    return C10_CUDA_ERROR_HANDLED(cudaMalloc(p, size));
+    if (!unified_memory) {
+      return C10_CUDA_ERROR_HANDLED(cudaMalloc(p, size));
+    } else {
+      return C10_CUDA_ERROR_HANDLED(cudaMallocManaged(p, size));
+    }
   }
+#elif
+  return C10_CUDA_ERROR_HANDLED(cudaMalloc(p, size));
 #endif
 }
 
@@ -3291,6 +3311,17 @@ class NativeCachingAllocator : public CUDAAllocator {
   }
 
   DataPtr allocate(size_t size) const override {
+    static bool unified_memory = false;
+    static bool initialized = false;
+    if (!initialized) {
+      const char* env = getenv("TORCH_UNIFIED_MEMORY");
+      if (env && atoi(env) != 0) {
+        unified_memory = true;
+        std::cout << __FILE__ << ":" << __LINE__ << ": " 
+                  << "pytorch using unified memory" << std::endl;
+      }
+      initialized = true;
+    }
     constexpr size_t one_exa_bytes = 1152921504606846976ULL;
     TORCH_CHECK_WITH(
         OutOfMemoryError,
@@ -3302,7 +3333,11 @@ class NativeCachingAllocator : public CUDAAllocator {
     if (forceUncachedAllocator()) {
       // Deliberately don't use cudaMallocMaybeCapturing here, to force an error
       // if someone tries to use forceUncachedAllocator while capturing.
-      C10_CUDA_CHECK(cudaMalloc(&r, size));
+      if (!unified_memory) {
+        C10_CUDA_CHECK(cudaMalloc(&r, size));
+      } else {
+        C10_CUDA_CHECK(cudaMallocManaged(&r, size));
+      }
       const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
       if (C10_UNLIKELY(interp)) {
         (*interp)->trace_gpu_memory_allocation(reinterpret_cast<uintptr_t>(r));
