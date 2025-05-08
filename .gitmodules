@@ -89,7 +89,7 @@
 [submodule "third_party/nccl/nccl"]
     ignore = dirty
     path = third_party/nccl/nccl
-	url = git@ipads.se.sjtu.edu.cn:infer-train/nccl.git
+	url = git@github.com:SiriusInfTra/NCCL.git
 [submodule "third_party/gemmlowp/gemmlowp"]
     ignore = dirty
     path = third_party/gemmlowp/gemmlowp
